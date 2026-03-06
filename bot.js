@@ -19,7 +19,7 @@ if (!BOT_TOKEN || !SOURCE_CHANNEL_ID || !TARGET_CHANNEL_ID) {
 }
 // ──────────────────────────────────────────────────────────────────────────────
 
-client.once('ready', () => {
+client.once('clientReady', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`👁  Watching: ${SOURCE_CHANNEL_ID}`);
   console.log(`📤 Forwarding to: ${TARGET_CHANNEL_ID}`);
