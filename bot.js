@@ -61,7 +61,7 @@ function rebuildFieldValue(fieldName, value) {
   }
 
   if (name.includes('korblox')) {
-    const emojis = [E.korblox, E.headless, E.korblox];
+    const emojis = ['<:korbloxdeath:1479443066925355221>', E.headless, E.korblox];
     return lines.filter(Boolean).map((l, i) => `${emojis[i] || ''} ${l}`).join('\n');
   }
 
