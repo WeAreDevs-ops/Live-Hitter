@@ -19,7 +19,55 @@ if (!BOT_TOKEN || !SOURCE_CHANNEL_ID || !TARGET_CHANNEL_ID) {
 }
 // ──────────────────────────────────────────────────────────────────────────────
 
-// Field names to keep (matched against field.name, case-insensitive, strips emojis)
+// Your server's emojis
+const E = {
+  robux:   '<:robux:1479438036939833384>',
+  rap:     '<:rap:1479437578405941299>',
+  summary: '<:summary:1479437991930888354>',
+  premium: '<:Premium:1479438456760303690>',
+  korblox: '<:korblox:1479437718495821976>',
+  headless:'<:headless:1479437752712953970>',
+};
+
+function stripEmojis(str) {
+  return str.replace(/<a?:[a-zA-Z0-9_]+:[0-9]+>/g, '').trim();
+}
+
+function rebuildFieldValue(fieldName, value) {
+  const name = stripEmojis(fieldName).toLowerCase();
+  const lines = value.split('\n').map(l => stripEmojis(l));
+
+  if (name.includes('robux')) {
+    return lines.map(l => {
+      if (/balance/i.test(l)) return `${E.robux} ${l.replace(/balance\s*/i, 'Balance ')}`;
+      if (/pending/i.test(l)) return `${E.robux} ${l.replace(/pending\s*/i, 'Pending ')}`;
+      return l;
+    }).filter(Boolean).join('\n');
+  }
+
+  if (name.includes('rap')) {
+    return lines.map(l => {
+      if (/rap/i.test(l)) return `${E.rap} ${l}`;
+      return l;
+    }).filter(Boolean).join('\n');
+  }
+
+  if (name.includes('summary')) {
+    return lines.map(l => l ? `${E.summary} ${l}` : l).join('\n');
+  }
+
+  if (name.includes('premium')) {
+    return lines.map(l => l ? `${E.premium} ${l}` : l).join('\n');
+  }
+
+  if (name.includes('korblox')) {
+    const emojis = [E.korblox, E.headless, E.korblox];
+    return lines.filter(Boolean).map((l, i) => `${emojis[i] || ''} ${l}`).join('\n');
+  }
+
+  return value;
+}
+
 const KEEP_FIELD_NAMES = ['robux', 'rap', 'summary', 'premium', 'korblox'];
 
 function cleanText(str) {
@@ -71,12 +119,7 @@ client.on('messageCreate', async (message) => {
     }
 
     const keptFields = (embed.fields ?? []).filter(shouldKeepField);
-    console.log('📋 Kept fields:', keptFields.map(f => f.name));
-
-    if (keptFields.length === 0) {
-      console.log('⚠️  No matching fields found, skipping');
-      continue;
-    }
+    if (keptFields.length === 0) continue;
 
     const intro = hitterName
       ? `Wow @${hitterName} just getting a hit`
@@ -85,8 +128,8 @@ client.on('messageCreate', async (message) => {
     const rebuilt = new EmbedBuilder();
     rebuilt.setDescription(intro);
     rebuilt.addFields(keptFields.map(f => ({
-      name:   f.name,
-      value:  f.value,
+      name:   stripEmojis(f.name) || f.name,
+      value:  rebuildFieldValue(f.name, f.value),
       inline: f.inline ?? false,
     })));
 
